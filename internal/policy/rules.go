@@ -301,6 +301,8 @@ func (w *walker) exec(args []arg, depth int) {
 		w.fetch(name, rest)
 	case "ssh", "scp", "sftp", "rsync":
 		w.r.judgef(name + " connects to another machine")
+	case "twine", "gem", "poetry", "flit", "hatch", "gsutil":
+		w.publish(name, rest)
 	case "aws", "gcloud", "az", "flyctl", "fly", "vercel", "netlify", "heroku", "firebase", "wrangler", "doctl", "pulumi", "eksctl", "serverless", "sls":
 		w.cloud(name, rest)
 	default:
@@ -875,7 +877,32 @@ func (w *walker) fetch(name string, rest []arg) {
 	w.r.judgef(name + " fetches from the network")
 }
 
+// publish denies package uploads and copies into cloud storage.
+func (w *walker) publish(name string, rest []arg) {
+	ops, _ := operands(rest, "-r,--repository")
+	if len(ops) > 0 {
+		switch name + " " + ops[0].v {
+		case "twine upload", "gem push", "gem yank", "poetry publish", "flit publish", "hatch publish",
+			"gsutil cp", "gsutil rsync", "gsutil mv", "gsutil rm":
+			w.r.denyf(name + " " + ops[0].v + " publishes or changes remote storage")
+			return
+		}
+	}
+	w.r.judgef(name + " is a packaging or storage tool")
+}
+
 func (w *walker) cloud(name string, rest []arg) {
+	if name == "aws" {
+		ops, _ := operands(rest, "--profile,--region,--endpoint-url,--output")
+		if len(ops) >= 2 && ops[0].v == "s3" && (ops[1].v == "sync" || ops[1].v == "cp" || ops[1].v == "mv") {
+			for _, a := range ops[2:] {
+				if strings.HasPrefix(a.v, "s3://") && a != ops[2] {
+					w.r.denyf("aws s3 " + ops[1].v + " writes to an S3 bucket")
+					return
+				}
+			}
+		}
+	}
 	for _, a := range rest {
 		switch v := a.v; {
 		case v == "deploy" || v == "delete" || v == "destroy" || v == "rm" || v == "rb" || v == "up" ||
