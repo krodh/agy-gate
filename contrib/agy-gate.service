@@ -19,8 +19,7 @@ StateDirectoryMode=0700
 # own state, which the judge workers need for auth and conversations. It must
 # keep user namespaces: bwrap uses them to sandbox the judge workers.
 # ProtectKernelTunables, ProtectKernelLogs, RestrictSUIDSGID and ProtectHostname
-# are left out on
-# purpose: each one stops bwrap from mounting /proc or / (verified).
+# are left out on purpose: each stops bwrap from mounting /proc or / (verified).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
