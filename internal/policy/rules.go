@@ -449,10 +449,12 @@ func (w *walker) readCmd(name string, rest []arg) {
 		}
 		valueFlags = "-f,-v,-F"
 	case "sort":
-		if _, vals := operands(rest, "-o,--output,-T,-S,-k,-t"); len(vals) > 0 {
+		if _, vals := operands(rest, "-o,--output,-T,-S,-k,-t"); len(vals) > 0 || hasPrefix(rest, "-o") {
 			for i, a := range rest {
 				if (a.v == "-o" || a.v == "--output") && i+1 < len(rest) {
 					w.write(rest[i+1], "writes")
+				} else if strings.HasPrefix(a.v, "-o") && len(a.v) > 2 {
+					w.write(arg{v: a.v[2:], kind: a.kind}, "writes")
 				} else if strings.HasPrefix(a.v, "--output=") {
 					w.write(arg{v: a.v[len("--output="):], kind: a.kind}, "writes")
 				}
@@ -543,13 +545,20 @@ func (w *walker) mutate(name string, rest []arg) {
 				w.r.denyf("recursively deletes " + p + ", which contains the workspace, home or root")
 				return
 			}
-			switch w.e.zoneOf(p) {
+			// rm removes a symlink itself, not its target, unless given "link/".
+			// A glob's directory is traversed, so it is always resolved.
+			z := w.e.linkZone(p)
+			if a.kind == glob {
+				z = w.e.zoneOf(p)
+			}
+			switch z {
 			case zoneOutside, zoneUnknown:
 				if recursive {
 					w.r.denyf("recursively deletes outside the workspace: " + p)
 					return
 				}
 				w.r.judgef("deletes outside the workspace: " + p)
+			case zoneWorkspace, zoneScratch:
 			default:
 				w.write(a, "deletes")
 			}
@@ -954,6 +963,10 @@ func (w *walker) build(name string, rest []arg) {
 				return
 			}
 		case "install", "i", "add":
+			if has(rest, "-g", "--global", "--location=global") {
+				w.r.judgef(name + " installs globally, outside the workspace")
+				return
+			}
 			if ops, _ := operands(rest, ""); len(ops) > 1 || sub == "add" {
 				w.r.judgef(name + " installs a new package")
 				return
@@ -1054,19 +1067,26 @@ func safeScript(s string) bool {
 	return false
 }
 
+// buildOutFlags name options whose value is a path the build writes to.
+var buildOutFlags = map[string]bool{"-o": true, "--output": true, "--out-dir": true, "--target-dir": true,
+	"-C": true, "--prefix": true, "--outdir": true, "--out": true, "-d": true, "--dest": true, "--destination": true}
+
 func (w *walker) checkBuildPaths(rest []arg) {
 	for i, a := range rest {
 		v := a.v
-		if (v == "-o" || v == "--output" || v == "--out-dir" || v == "--target-dir" || v == "-C") && i+1 < len(rest) {
-			w.write(rest[i+1], "builds into")
-			continue
-		}
 		if a.kind == dynamic {
 			w.r.judgef("build argument built from expansions")
 			continue
 		}
-		if _, after, ok := strings.Cut(v, "="); ok && strings.HasPrefix(v, "-") {
-			v = after
+		if name, val, ok := strings.Cut(v, "="); ok && strings.HasPrefix(v, "-") {
+			if buildOutFlags[name] {
+				w.write(arg{v: val, kind: a.kind}, "builds into")
+				continue
+			}
+			v = val
+		} else if buildOutFlags[v] && i+1 < len(rest) {
+			w.write(rest[i+1], "builds into")
+			continue
 		}
 		if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "~") || strings.HasPrefix(v, "..") {
 			w.read(arg{v: v, kind: a.kind})
@@ -1139,7 +1159,13 @@ sub:
 			w.r.judgef("git reflog " + args[0].v + " discards recovery points")
 			return
 		}
-	case "add", "commit", "switch", "mv", "rm", "init", "merge", "cherry-pick", "revert", "apply", "am",
+	case "apply", "am":
+		if hasPrefix(args, "--directory") || has(args, "--unsafe-paths") {
+			w.r.judgef("git " + sub + " may write outside the repository")
+			return
+		}
+		local()
+	case "add", "commit", "switch", "mv", "rm", "init", "merge", "cherry-pick", "revert",
 		"format-patch", "archive", "notes", "mergetool", "difftool", "stage":
 		local()
 	case "branch":
@@ -1192,6 +1218,11 @@ sub:
 			w.r.judgef("git checkout may discard uncommitted changes")
 			return
 		}
+		if sub == "restore" {
+			for _, a := range ops {
+				w.write(a, "restores")
+			}
+		}
 		local()
 	case "reset":
 		if has(args, "--hard", "--keep", "--merge") {
@@ -1231,16 +1262,18 @@ func (w *walker) gitConfig(args []arg) {
 		switch a.v {
 		case "--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "--show-origin", "--show-scope", "--name-only", "--null", "-z":
 			return
-		case "--global", "--system", "--file", "-f", "--blob":
-			w.r.denyf("git config changes configuration outside the repository")
-			return
 		}
 	}
-	ops, _ := operands(args, "")
-	if len(ops) < 2 {
-		return // `git config key` reads
+	ops, _ := operands(args, "--file,-f,--blob,--type")
+	writes := len(ops) >= 2 || has(args, "--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section", "-e", "--edit")
+	if !writes {
+		return // `git config [--global] key` reads
 	}
-	if ops[0].kind != static || gitConfigRuns(ops[0].v) {
+	if has(args, "--global", "--system", "--file", "-f", "--blob") || hasPrefix(args, "--file=") {
+		w.r.denyf("git config changes configuration outside the repository")
+		return
+	}
+	if len(ops) > 0 && (ops[0].kind != static || gitConfigRuns(ops[0].v)) {
 		w.r.denyf("git config sets " + ops[0].v + ", which can run commands")
 	}
 }
