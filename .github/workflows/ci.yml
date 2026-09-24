@@ -2,24 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.27'
-    - name: fmt
-      run: if [ -n "$(gofmt -l .)" ]; then exit 1; fi
-    - name: vet
-      run: go vet ./...
-    - name: test
-      run: go test -race ./...
-    - name: build
-      run: make build
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make lint
+      - run: go test -race ./...
+      - run: make build
