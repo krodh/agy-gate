@@ -1,12 +1,41 @@
 [Unit]
-Description=agy-gate permission daemon
-After=network.target
+Description=agy-gate permission daemon for unattended agy agents
+Documentation=https://github.com/krodh/agy-gate
 
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/agy-gate serve
 Restart=always
 RestartSec=3
+
+# The socket lives in $XDG_RUNTIME_DIR/agy-gate (0700); the audit log and the
+# judge workers' directory in ~/.local/state/agy-gate.
+RuntimeDirectory=agy-gate
+RuntimeDirectoryMode=0700
+StateDirectory=agy-gate
+StateDirectoryMode=0700
+
+# Least privilege. The daemon only reads the system and home, except agy's
+# own state, which the judge workers need for auth and conversations. It must
+# keep user namespaces: bwrap uses them to sandbox the judge workers.
+# ProtectKernelTunables, ProtectKernelLogs, RestrictSUIDSGID and ProtectHostname
+# are left out on
+# purpose: each one stops bwrap from mounting /proc or / (verified).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.gemini %h/.cache/antigravity
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+MemoryMax=1G
+TasksMax=256
 
 [Install]
 WantedBy=default.target

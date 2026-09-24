@@ -101,16 +101,17 @@ func TestPool(t *testing.T) {
 		}
 	})
 
-	t.Run("crash replacement", func(t *testing.T) {
+	t.Run("dead workers are never handed out", func(t *testing.T) {
 		crashCfg := cfg
-		crashCfg.Model = "CRASH" // fakeAgy reads this from args? No, args are built in worker.go
-		// Wait, worker.go passes cfg.Model as an argument! "--model CRASH"
+		crashCfg.Model = "CRASH" // the fake agy sees --model CRASH and exits on its first message
 		p := NewPool(crashCfg, 1, 5, 500*time.Millisecond)
 		time.Sleep(100 * time.Millisecond)
 
+		// Every worker dies during warm-up, so none may reach callers: the call
+		// must fail waiting for a worker, not with a broken pipe from a dead one.
 		_, err := p.Ask(context.Background(), "test")
-		if err == nil {
-			t.Fatal("expected error on crash")
+		if err == nil || !strings.Contains(err.Error(), "timeout waiting for worker") {
+			t.Fatalf("want timeout waiting for worker, got %v", err)
 		}
 	})
 
