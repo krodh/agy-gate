@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PradyumnaKrishna/agy-gate/internal/judge"
-	"github.com/PradyumnaKrishna/agy-gate/internal/policy"
+	"github.com/krodh/agy-gate/internal/judge"
+	"github.com/krodh/agy-gate/internal/policy"
 )
 
 type Config struct {

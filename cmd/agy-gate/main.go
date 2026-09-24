@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PradyumnaKrishna/agy-gate/internal/judge"
-	"github.com/PradyumnaKrishna/agy-gate/internal/policy"
-	"github.com/PradyumnaKrishna/agy-gate/internal/server"
+	"github.com/krodh/agy-gate/internal/judge"
+	"github.com/krodh/agy-gate/internal/policy"
+	"github.com/krodh/agy-gate/internal/server"
 )
 
 func main() {

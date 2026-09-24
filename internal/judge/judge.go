@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PradyumnaKrishna/agy-gate/internal/policy"
+	"github.com/krodh/agy-gate/internal/policy"
 )
 
 type Decision struct {

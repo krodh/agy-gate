@@ -1,4 +1,4 @@
-module github.com/PradyumnaKrishna/agy-gate
+module github.com/krodh/agy-gate
 
 go 1.27.1
 
