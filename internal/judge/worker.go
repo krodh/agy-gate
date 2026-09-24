@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -63,7 +64,7 @@ func writeWorkerFiles(wd string) error {
 	if err != nil {
 		return err
 	}
-	agent := "---\nname: agy-gate-judge\ndescription: agy-gate permission judge\nexcludeDefaultComponents: true\ntools: []\nsubagent: false\n---\n# agy-gate judge\n\n" + promptData
+	agent := "---\nname: agy-gate-judge\ndescription: agy-gate permission judge\nexcludeDefaultComponents: true\ntools: []\nsubagent: false\n---\n# agy-gate judge\n\n" + demoteHeadings(promptData)
 	if err := os.WriteFile(filepath.Join(wd, "settings.json"), settings, 0o600); err != nil {
 		return fmt.Errorf("worker settings: %w", err)
 	}
@@ -71,6 +72,21 @@ func writeWorkerFiles(wd string) error {
 		return fmt.Errorf("judge agent: %w", err)
 	}
 	return nil
+}
+
+// demoteHeadings pushes every Markdown heading one level down. agy splits an
+// agent file at H1 headings and keeps only the first section as the system
+// prompt, so the prompt must contain no H1 of its own.
+func demoteHeadings(md string) string {
+	var b strings.Builder
+	b.Grow(len(md) + 64)
+	for line := range strings.Lines(md) {
+		if strings.HasPrefix(line, "#") {
+			b.WriteByte('#')
+		}
+		b.WriteString(line)
+	}
+	return b.String()
 }
 
 func StartWorker(ctx context.Context, cfg WorkerConfig) (*Worker, error) {
