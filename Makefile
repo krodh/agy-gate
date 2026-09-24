@@ -25,7 +25,7 @@ eval: build
 
 install: build
 	mkdir -p ~/.local/bin
-	cp bin/agy-gate bin/agy-gate-hook ~/.local/bin/
+	install -m 0755 bin/agy-gate bin/agy-gate-hook ~/.local/bin/
 	mkdir -p ~/.config/systemd/user
-	cp contrib/agy-gate.service ~/.config/systemd/user/
+	install -m 0644 contrib/agy-gate.service ~/.config/systemd/user/
 	systemctl --user daemon-reload
