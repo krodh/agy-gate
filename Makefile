@@ -16,7 +16,7 @@ bench:
 	go test -bench=. ./...
 
 lint:
-	gofmt -l . | grep -v "No formatting required" || true
+	@out=$$(gofmt -l $$(git ls-files '*.go')); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 	go vet ./...
 
 eval: build
