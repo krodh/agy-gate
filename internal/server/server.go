@@ -95,7 +95,13 @@ func NewServer(cfg Config) (*Server, error) {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	os.MkdirAll(filepath.Dir(s.cfg.Socket), 0700)
+	// MkdirAll keeps an existing directory's mode, so set it explicitly.
+	if err := os.MkdirAll(filepath.Dir(s.cfg.Socket), 0o700); err != nil {
+		return fmt.Errorf("socket dir: %w", err)
+	}
+	if err := os.Chmod(filepath.Dir(s.cfg.Socket), 0o700); err != nil {
+		return fmt.Errorf("socket dir: %w", err)
+	}
 
 	// Check for stale socket
 	if _, err := os.Stat(s.cfg.Socket); err == nil {
@@ -181,6 +187,20 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
+	// PostInvocation only asks whether the run should stop; it carries no tool call.
+	if event == "post" {
+		s.mu.Lock()
+		c := s.denials[call.ConversationID]
+		stop := c != nil && (c.Consecutive >= 3 || c.Total >= 20)
+		s.mu.Unlock()
+		if stop {
+			conn.Write([]byte("{\"terminationBehavior\":\"terminate\"}\n"))
+		} else {
+			conn.Write([]byte("{}\n"))
+		}
+		return
+	}
+
 	// 2. Policy (deterministic layer)
 	verdict := policy.Decide(call, s.cfg.Home)
 
@@ -243,27 +263,19 @@ func (s *Server) handle(conn net.Conn) {
 	}
 
 	// 5. Limits
+	s.mu.Lock()
 	if decision == "deny" {
-		if event == "pre" {
-			s.mu.Lock()
-			c, ok := s.denials[call.ConversationID]
-			if !ok {
-				c = &DenialCounter{}
-				s.denials[call.ConversationID] = c
-			}
-			c.Consecutive++
-			c.Total++
-			s.mu.Unlock()
+		c, ok := s.denials[call.ConversationID]
+		if !ok {
+			c = &DenialCounter{}
+			s.denials[call.ConversationID] = c
 		}
-	} else {
-		if event == "pre" {
-			s.mu.Lock()
-			if c, ok := s.denials[call.ConversationID]; ok {
-				c.Consecutive = 0
-			}
-			s.mu.Unlock()
-		}
+		c.Consecutive++
+		c.Total++
+	} else if c, ok := s.denials[call.ConversationID]; ok {
+		c.Consecutive = 0
 	}
+	s.mu.Unlock()
 
 	s.mu.Lock()
 	c := s.denials[call.ConversationID]
@@ -280,21 +292,8 @@ func (s *Server) handle(conn net.Conn) {
 		decision = "allow"
 	}
 
-	// Reply
-	if event == "post" {
-		if isEscalated {
-			conn.Write([]byte("{\"terminationBehavior\":\"terminate\"}\n"))
-		} else {
-			conn.Write([]byte("{}\n"))
-		}
-	} else {
-		resBytes, _ := json.Marshal(map[string]string{
-			"decision": decision,
-			"reason":   reason,
-		})
-		conn.Write(resBytes)
-		conn.Write([]byte("\n"))
-	}
+	resBytes, _ := json.Marshal(map[string]string{"decision": decision, "reason": reason})
+	conn.Write(append(resBytes, '\n'))
 
 	// 6. Audit
 	if s.audit != nil {
