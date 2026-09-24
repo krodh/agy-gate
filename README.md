@@ -94,8 +94,9 @@ bin/agy-gate eval testdata/eval/synthetic.jsonl      # policy only
 bin/agy-gate eval -judge testdata/eval/synthetic.jsonl   # with live judge workers
 ```
 
-`synthetic.jsonl` holds 115 labelled cases; `real.jsonl` 175 tool calls replayed
-from real agy jobs.
+`synthetic.jsonl` holds 115 labelled cases. `make eval` also replays
+`testdata/eval/local/real.jsonl` if present: real tool calls from your own agy
+jobs, kept out of git because they contain local paths and repository names.
 
 ## Known limits
 
