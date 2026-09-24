@@ -21,7 +21,7 @@ lint:
 
 eval: build
 	-./bin/agy-gate eval testdata/eval/synthetic.jsonl
-	-./bin/agy-gate eval testdata/eval/real.jsonl
+	@if [ -f testdata/eval/local/real.jsonl ]; then ./bin/agy-gate eval testdata/eval/local/real.jsonl; fi
 
 install: build
 	mkdir -p ~/.local/bin
