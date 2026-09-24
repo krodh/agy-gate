@@ -40,7 +40,7 @@ The client does not parse JSON. It sends one header line and the raw hook payloa
 copies the daemon's reply to stdout:
 
 ```
-agy-gate/1 <event> <run-id> <workspace-list>\n      event: pre | post
+agy-gate/1\t<event>\t<run-id>\t<workspace-list>\n     tab-separated; event: pre | post; "-" = empty
 <raw agy hook payload>
 ```
 
@@ -105,8 +105,8 @@ agy --agent agy-gate-judge --add-dir <ABS workerdir> --model <m> --input-format 
   stdout: ... {"event":"result","result":{"status":"SUCCESS","response":"{\"decision\":...}","usage":{...}}}
 ```
 
-- A worker is warmed with a throwaway request (agy starts lazily, ~8-12 s) and recycled after 15
-  requests (its context grows ~700 tokens per request). The replacement is spawned first.
+- A worker is warmed with a throwaway request (agy starts lazily, ~8-12 s) and recycled after 6
+  requests (its context grows ~2.3k tokens per request). The replacement is spawned first.
 - Workers run under bwrap with a hidden home, `AGY_GATE_ROLE=classifier` and an empty allow list.
   `--add-dir` must be absolute or agy ignores the agent's frontmatter.
 - A request carries only the user's own messages (transcript entries with `type: USER_INPUT` and
@@ -117,7 +117,8 @@ agy --agent agy-gate-judge --add-dir <ABS workerdir> --model <m> --input-format 
   are pinned in memory; a transcript whose seen prefix changes is treated as tampered.
 - Output must be one JSON object. Anything else, a timeout, or a dead worker is retried once on
   another worker, then denied. A quota error disables the judge for 5 minutes (fast deny).
-- Default model `gemini-3.6-flash-low`: measured 1.2-5.6 s warm; it uses the Gemini quota pool.
+- Default model `gemini-3.6-flash-low`, the one flash tier that reasons before answering; it uses
+  the Gemini quota pool. Measured 10-15 s median per request with the full prompt.
 
 ## Denials
 
@@ -149,6 +150,25 @@ socket directory, sets `AGY_GATE_*`, and adds `--add-dir` for each work dir (hea
 workspace otherwise). Global settings stay on request-review, so a broken gate can never open up
 interactive sessions.
 
+## Threat model
+
+The agent is untrusted: it may be confused, or steered by content it read. It
+runs as the same Unix user as the gate, inside agy-run's bwrap sandbox. The gate
+must hold even if the agent tries to switch it off, so everything that could
+disable or bypass it is out of the agent's reach:
+
+| bypass | defence |
+|---|---|
+| replace the socket with an allow-all listener | socket directory mounted read-only in the sandbox (connect works on a read-only mount, unlink and bind do not; verified); the hook never falls back to `/tmp`, which the agent owns |
+| edit or remove the hook | per-run `hooks.json` and the hook binary mounted read-only; `--auto` refuses `--open` |
+| register hooks, MCP servers or agents agy would run outside the gate | `~/.gemini/config` read-only; the work dir's `.agents`, `.agent`, `_agents`, `_agent` read-only; writes to them are also denied by policy |
+| forge user approval in the transcript | the transcript is protected from writes by policy; the daemon pins the user requests it has seen per conversation |
+| make a judge worker run tools | workers have no tools, an empty allow list, a hidden home, and `AGY_GATE_ROLE=classifier`, which makes the hook deny without asking |
+| talk the judge into it | the judge sees only the user's messages, the call and the policy's note, never tool output or the agent's text |
+
+Out of scope: what programs do after an allowed build or test step starts them,
+and anything the sandbox itself permits.
+
 ## Verified agy facts this depends on (agy 1.2.8)
 
 - Hooks can only enforce under `always-proceed`; there, `ask` and `force_ask` are ignored, so the
@@ -156,3 +176,8 @@ interactive sessions.
 - A hook that crashes, prints non-JSON or times out aborts the call (fail closed). A missing hook
   lets everything run, which is why the hooks file is mounted read-only per run.
 - The deny reason reaches the model verbatim. Profile deny rules still apply under always-proceed.
+- agy splits a Markdown agent file at H1 headings and uses only the first section as the system
+  prompt, so the judge prompt's headings are demoted one level when the agent file is written.
+- A PostInvocation payload has no `toolCall`; the daemon answers it from the denial counters only.
+- Warm judge latency on the agy backend: median 10-15 s, tail ~45 s; context grows ~2.3k tokens
+  per request, hence recycling after 6 requests.
