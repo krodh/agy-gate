@@ -20,8 +20,13 @@ const deny = `{"decision":"deny","reason":"[agy-gate/hook] the gate daemon is un
 
 func main() {
 	event := "pre"
-	if len(os.Args) > 1 && os.Args[1] == "-post" {
-		event = "post"
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-post":
+			event = "post"
+		case "-inv":
+			event = "inv"
+		}
 	}
 	// A judge worker must never run tools, whatever the daemon would say.
 	if os.Getenv("AGY_GATE_ROLE") == "classifier" {
@@ -74,7 +79,7 @@ func field(s string) string {
 }
 
 func fail(event string) {
-	if event == "post" {
+	if event == "post" || event == "inv" {
 		os.Stdout.WriteString("{}\n")
 	} else {
 		os.Stdout.WriteString(deny)
