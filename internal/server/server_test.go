@@ -121,4 +121,17 @@ func TestServerEndToEndAndLimits(t *testing.T) {
 	if !strings.Contains(out, "deny") || strings.Contains(out, "ESCALATED") {
 		t.Fatalf("expected plain deny after reset, got %s", out)
 	}
+
+	// A real PostInvocation payload has no toolCall. It must be answered from the
+	// denial counters alone: never judged, never counted as a denial.
+	for i := 0; i < 4; i++ {
+		post := exec.Command(hookBin, "-post")
+		post.Env = append(os.Environ(), "AGY_GATE_SOCKET="+sock)
+		post.Stdin = strings.NewReader(`{"conversationId":"conv-post","invocationNum":1,"initialNumSteps":3}`)
+		start := time.Now()
+		got, _ := post.Output()
+		if strings.TrimSpace(string(got)) != "{}" || time.Since(start) > time.Second {
+			t.Fatalf("post event: got %q after %v, want {} immediately", got, time.Since(start))
+		}
+	}
 }
