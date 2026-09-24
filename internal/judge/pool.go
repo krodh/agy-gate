@@ -37,23 +37,28 @@ func NewPool(cfg WorkerConfig, numWorkers int, recycle int, timeout time.Duratio
 	return p
 }
 
+// startOne spawns and warms a worker, and only adds it to the pool once it has
+// answered. A worker that fails to start or warm up is closed (which reaps it)
+// and retried with exponential backoff, so the pool never hands out a dead
+// worker and heals itself once the cause (quota, network, sandbox) goes away.
 func (p *Pool) startOne() {
-	// Spawn and warmup
-	w, err := StartWorker(context.Background(), p.cfg)
-	if err != nil {
-		// Log error? We don't have a logger, just sleep and retry
-		time.Sleep(2 * time.Second)
-		go p.startOne()
-		return
+	for delay := 2 * time.Second; ; delay = min(delay*2, time.Minute) {
+		w, err := StartWorker(context.Background(), p.cfg)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
+			_, err = w.Ask(ctx, "warmup")
+			cancel()
+			if err == nil {
+				p.workers <- w
+				return
+			}
+			w.Close()
+		}
+		if isQuota(err) {
+			p.setQuotaErr() // callers get a fast deny instead of waiting for a worker
+		}
+		time.Sleep(delay)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
-	defer cancel()
-
-	// Warmup with throwaway
-	_, _ = w.Ask(ctx, "warmup")
-
-	p.workers <- w
 }
 
 func (p *Pool) get() (*Worker, error) {
@@ -88,6 +93,15 @@ func (p *Pool) put(w *Worker, bad bool) {
 	p.workers <- w
 }
 
+// isQuota reports whether err is agy's quota or rate-limit error.
+func isQuota(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "quota") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "429")
+}
+
 func (p *Pool) setQuotaErr() {
 	p.mu.Lock()
 	p.quotaUntil = time.Now().Add(5 * time.Minute)
@@ -112,8 +126,7 @@ func (p *Pool) Ask(ctx context.Context, req string) (string, error) {
 		cancel()
 
 		if err != nil {
-			msg := err.Error()
-			if strings.Contains(msg, "quota") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "429") {
+			if isQuota(err) {
 				p.setQuotaErr()
 				p.put(w, true)
 				return "", errors.New("RESOURCE_EXHAUSTED")

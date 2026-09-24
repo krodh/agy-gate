@@ -299,7 +299,7 @@ func (s *Server) handle(conn net.Conn) {
 						decision = "allow"
 					} else {
 						decision = "deny"
-						reason = fmt.Sprintf("[agy-gate/judge] %s. Do not retry or work around this; use a safer approach or stop and report what you need.", parsed.Reason)
+						reason = fmt.Sprintf("[agy-gate/judge] %s. Do not retry or work around this; use a safer approach or stop and report what you need.", strings.TrimRight(parsed.Reason, ". "))
 					}
 
 					// Cache judged verdicts
