@@ -55,3 +55,16 @@ func TestTranscript(t *testing.T) {
 		t.Fatal("expected error on shortened transcript")
 	}
 }
+
+func TestDemoteHeadings(t *testing.T) {
+	got := demoteHeadings("intro\n# Evidence\ntext #1\n## Deciding\n")
+	want := "intro\n## Evidence\ntext #1\n### Deciding\n"
+	if got != want {
+		t.Fatalf("demoteHeadings = %q, want %q", got, want)
+	}
+	for line := range strings.Lines(demoteHeadings(promptData)) {
+		if strings.HasPrefix(line, "# ") {
+			t.Fatalf("judge prompt still has an H1 heading: %q", line)
+		}
+	}
+}
