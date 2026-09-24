@@ -41,6 +41,8 @@ agy (always-proceed) ── PreToolUse ──► agy-gate-hook ── unix socke
 3. **Limits.** After 3 denials in a row or 20 in total, the run is terminated.
    Every deny reason is written as an instruction to the agent, because agy shows
    it verbatim.
+4. **Probe.** A fast PreInvocation hook scans the latest tool outputs for prompt
+   injection attempts and adds an ephemeral warning if it sees any.
 
 Everything fails closed: if the daemon is down, slow or confused, the call is
 denied. Design and threat model: [ARCHITECTURE.md](ARCHITECTURE.md).

@@ -120,6 +120,10 @@ agy --agent agy-gate-judge --add-dir <ABS workerdir> --model <m> --input-format 
 - Default model `gemini-3.6-flash-low`, the one flash tier that reasons before answering; it uses
   the Gemini quota pool. Measured 10-15 s median per request with the full prompt.
 
+## Probe (input layer)
+
+The daemon also handles the `PreInvocation` event via `agy-gate-hook -inv` to scan new tool outputs before a model call. It reads the agent's transcript and searches for known prompt-injection triggers ("ignore previous instructions", etc.) using cheap case-insensitive substring matching on the first 64 KiB of each step's output. If a match is found, it injects an `ephemeralMessage` into the prompt advising the agent to treat the text as data and ignore it. The scan is incremental (a high-water mark of step indices is kept in memory) and failure-oblivious: it never judges, never blocks a run, and emits `{}` on any error.
+
 ## Denials
 
 Every deny reason is written as an instruction to the agent, because agy shows it verbatim:
