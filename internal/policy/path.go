@@ -167,6 +167,23 @@ func (e *env) persistence(a string) bool {
 	return false
 }
 
+// linkZone is the zone of the directory entry p itself: symlinks in its parent
+// are resolved but a final symlink is not followed, which is what rm and mv act
+// on. A trailing slash makes the kernel follow the link, so then zoneOf applies.
+func (e *env) linkZone(p string) zone {
+	if strings.HasSuffix(p, "/") {
+		return e.zoneOf(p)
+	}
+	a, ok := e.abs(p)
+	if !ok {
+		return zoneUnknown
+	}
+	if lex := e.classify(filepath.Clean(a)); lex == zoneSecret || lex == zoneSystem {
+		return lex
+	}
+	return e.classify(filepath.Join(realpath(filepath.Dir(a)), filepath.Base(a)))
+}
+
 // isRootOrAbove reports whether p is /, home, a workspace root or one of its ancestors,
 // the targets a recursive delete must never have.
 func (e *env) isRootOrAbove(p string) bool {
@@ -175,7 +192,8 @@ func (e *env) isRootOrAbove(p string) bool {
 		return true
 	}
 	a = realpath(a)
-	if a == "/" || a == e.home {
+	switch a {
+	case "/", e.home, "/tmp", "/var/tmp", "/dev/shm":
 		return true
 	}
 	for _, w := range e.ws {
