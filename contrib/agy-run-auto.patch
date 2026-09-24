@@ -48,7 +48,7 @@
  AGYRUN_ALLOW="$(printf '%s\n' "${allow[@]}")" AGYRUN_DENY="$(printf '%s\n' "${deny[@]}")" \
  python3 - "$settings" "$run_settings" <<'PY'
  import json, os, sys
-@@ -61,8 +69,24 @@
+@@ -61,8 +69,25 @@
  perms["allow"] = perms.get("allow", []) + [f"read_file({d}/)" for d in lines("AGYRUN_READ")] + lines("AGYRUN_ALLOW")
  perms["deny"] = perms.get("deny", []) + lines("AGYRUN_DENY")
  s["trustedWorkspaces"] = sorted(set(s.get("trustedWorkspaces", [])) | set(lines("AGYRUN_WORK")))
@@ -67,13 +67,14 @@
 +json.dump({"agy-gate": {
 +    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": f"'{b}'", "timeout": 60}]}],
 +    "PostInvocation": [{"type": "command", "command": f"'{b}' -post", "timeout": 10}],
++    "PreInvocation": [{"type": "command", "command": f"'{b}' -inv", "timeout": 10}],
 +}}, open(sys.argv[1], "w"), indent=2)
 +PY
 +fi
  if [ $sandbox -eq 1 ]; then
    args=(
      --ro-bind / / --dev /dev --proc /proc
-@@ -81,6 +105,25 @@
+@@ -81,6 +106,25 @@
    args=(--bind / / --dev-bind /dev /dev --chdir "$PWD")
  fi
  args+=(--ro-bind "$run_settings" "$target" --die-with-parent --new-session)
