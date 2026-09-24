@@ -1,0 +1,101 @@
+--- agy-run.orig
++++ agy-run
+@@ -7,7 +7,7 @@
+ # agent cannot widen its own.
+ #
+ #   agy-run [--profile NAME|FILE] [--work DIR]... [--read DIR]... [--allow RULE]... [--deny RULE]...
+-#           [--open] [--gh-token-file FILE] -- <agy args>
++#           [--open] [--auto] [--gh-token-file FILE] -- <agy args>
+ #
+ #   --profile    ~/.config/agy-profiles/NAME.json, or a path (default: default)
+ #   --work DIR   the directory handed to the agent (repeatable; default: $PWD).
+@@ -22,6 +22,10 @@
+ #   --open       no sandbox: the agent sees and can write everything pi can;
+ #                only the profile's allow-list applies. --work is ignored.
+ #   --gh-token-file FILE  token handed to gh as GH_TOKEN (not visible in argv)
++#   --auto       unattended mode: toolPermission always-proceed, every tool call
++#                decided by the agy-gate daemon (~/claude/agy-gate) through a
++#                read-only PreToolUse hook. Refuses --open. The profile's deny
++#                rules still apply; its allow list no longer matters.
+ #
+ # The profile is materialised per run: the job's --work dirs are added as
+ # trustedWorkspaces and --read dirs as read_file() allow rules, so profiles stay
+@@ -30,11 +34,12 @@
+ # bwrap always sets no_new_privs, so sudo does not work in either mode.
+ set -euo pipefail
+ 
+-profiles="$HOME/.config/agy-profiles" profile=default sandbox=1 work=() read=() allow=() deny=() token_file=""
++profiles="$HOME/.config/agy-profiles" profile=default sandbox=1 work=() read=() allow=() deny=() token_file="" auto=0
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --profile) profile="$2"; shift 2 ;;
+     --open) sandbox=0; shift ;;
++    --auto) auto=1; shift ;;
+     --work) work+=("$(realpath "$2")"); shift 2 ;;
+     --read) read+=("$(realpath "$2")"); shift 2 ;;
+     --allow) allow+=("$2"); shift 2 ;;
+@@ -50,8 +55,11 @@
+ 
+ target="$HOME/.gemini/antigravity-cli/settings.json"
+ run_settings="$(mktemp "${TMPDIR:-/tmp}/agy-run.XXXXXX.json")"
+-trap 'rm -f "$run_settings"' EXIT
+-AGYRUN_WORK="$(printf '%s\n' "${work[@]}")" AGYRUN_READ="$(printf '%s\n' "${read[@]}")" \
++run_hooks="$(mktemp "${TMPDIR:-/tmp}/agy-run.XXXXXX.hooks.json")"
++trap 'rm -f "$run_settings" "$run_hooks"' EXIT
++gate_bin="${AGY_GATE_HOOK:-$HOME/.local/bin/agy-gate-hook}"
++gate_sock="${AGY_GATE_SOCKET:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/agy-gate/gate.sock}"
++AGYRUN_AUTO="$auto" AGYRUN_WORK="$(printf '%s\n' "${work[@]}")" AGYRUN_READ="$(printf '%s\n' "${read[@]}")" \
+ AGYRUN_ALLOW="$(printf '%s\n' "${allow[@]}")" AGYRUN_DENY="$(printf '%s\n' "${deny[@]}")" \
+ python3 - "$settings" "$run_settings" <<'PY'
+ import json, os, sys
+@@ -61,8 +69,24 @@
+ perms["allow"] = perms.get("allow", []) + [f"read_file({d}/)" for d in lines("AGYRUN_READ")] + lines("AGYRUN_ALLOW")
+ perms["deny"] = perms.get("deny", []) + lines("AGYRUN_DENY")
+ s["trustedWorkspaces"] = sorted(set(s.get("trustedWorkspaces", [])) | set(lines("AGYRUN_WORK")))
++if os.environ.get("AGYRUN_AUTO") == "1":
++    s["toolPermission"] = "always-proceed"
+ json.dump(s, open(sys.argv[2], "w"), indent=2)
+ PY
++if [ $auto -eq 1 ]; then
++  [ $sandbox -eq 1 ] || { echo "agy-run: --auto needs the sandbox; without it the agent could replace the gate (drop --open)" >&2; exit 2; }
++  [ -x "$gate_bin" ] || { echo "agy-run: --auto needs the gate hook at $gate_bin (make install in agy-gate)" >&2; exit 2; }
++  [ -S "$gate_sock" ] || { echo "agy-run: --auto needs the gate daemon listening on $gate_sock (systemctl --user start agy-gate)" >&2; exit 2; }
++  [ -f "$HOME/.gemini/config/hooks.json" ] || echo '{}' > "$HOME/.gemini/config/hooks.json"
++  GATE_BIN="$gate_bin" python3 - "$run_hooks" <<'PY'
++import json, os, sys
++b = os.environ["GATE_BIN"]
++json.dump({"agy-gate": {
++    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": f"'{b}'", "timeout": 60}]}],
++    "PostInvocation": [{"type": "command", "command": f"'{b}' -post", "timeout": 10}],
++}}, open(sys.argv[1], "w"), indent=2)
++PY
++fi
+ if [ $sandbox -eq 1 ]; then
+   args=(
+     --ro-bind / / --dev /dev --proc /proc
+@@ -81,6 +105,25 @@
+   args=(--bind / / --dev-bind /dev /dev --chdir "$PWD")
+ fi
+ args+=(--ro-bind "$run_settings" "$target" --die-with-parent --new-session)
++if [ $auto -eq 1 ]; then
++  # Under always-proceed the gate is the only check, so everything that could
++  # disable or bypass it is read-only inside the sandbox: its hooks file and
++  # binary, the socket directory (a writable one would let the agent replace the
++  # socket with its own allow-all listener), agy's global config (MCP servers,
++  # plugins, hooks) and each work dir's agy customization folders.
++  args+=(--ro-bind "$HOME/.gemini/config" "$HOME/.gemini/config"
++         --ro-bind "$run_hooks" "$HOME/.gemini/config/hooks.json" --ro-bind "$gate_bin" "$gate_bin"
++         --ro-bind "$(dirname "$gate_sock")" "$(dirname "$gate_sock")")
++  for w in "${work[@]}"; do
++    for d in .agents .agent _agents _agent; do
++      if [ -e "$w/$d" ]; then args+=(--ro-bind "$w/$d" "$w/$d"); else args+=(--tmpfs "$w/$d" --remount-ro "$w/$d"); fi
++    done
++  done
++  args+=(--setenv AGY_GATE_SOCKET "$gate_sock" --setenv AGY_GATE_RUN "$(date +%Y%m%dT%H%M%S)-$$"
++         --setenv AGY_GATE_WORKSPACE "$(IFS=:; echo "${work[*]}")")
++  # Headless agy has no workspace unless it is given --add-dir.
++  for d in "${work[@]}"; do set -- --add-dir "$d" "$@"; done
++fi
+ 
+ if [ -n "$token_file" ]; then
+   args+=(--ro-bind "$token_file" /run/agy-run/gh_token)
