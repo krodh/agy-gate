@@ -34,7 +34,7 @@ agy (always-proceed) ── PreToolUse ──► agy-gate-hook ── unix socke
    the workspace are allowed; credential access, persistence, privilege
    escalation, remote code execution, history rewrites, publishing and deploying
    are denied. Anything not provably safe goes to the judge.
-2. **Judge.** A no-tools `agy` agent running `gemini-3.6-flash-low` gets the
+2. **Judge.** A no-tools `agy` agent running `gemini-3.8-flash-low` gets the
    user's own messages, the pending call and the policy's note. It never sees
    tool output or the agent's own text, which is where prompt injection comes in.
    It answers allow or deny with a reason.
@@ -72,7 +72,7 @@ customization folders read-only inside the sandbox, and `--add-dir` for each
 work dir. Global agy settings are never changed.
 
 ```bash
-agy-run --auto --profile default --work ./job -- -p "..." --model gemini-3.6-flash-low
+agy-run --auto --profile default --work ./job -- -p "..." --model gemini-3.8-flash-low
 ```
 
 ## Daemon flags
@@ -80,7 +80,7 @@ agy-run --auto --profile default --work ./job -- -p "..." --model gemini-3.6-fla
 | flag | default | |
 |---|---|---|
 | `-socket` | `$XDG_RUNTIME_DIR/agy-gate/gate.sock` | never under `/tmp` |
-| `-model` | `gemini-3.6-flash-low` | judge model; uses the Gemini quota pool |
+| `-model` | `gemini-3.8-flash-low` | judge model; uses the Gemini quota pool |
 | `-workers` | 2 | warm judge processes |
 | `-recycle` | 6 | requests per worker; context grows ~2.3k tokens per request |
 | `-timeout` | 40s | per judge request |

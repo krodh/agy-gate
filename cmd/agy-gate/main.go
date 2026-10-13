@@ -55,7 +55,7 @@ func serve() {
 	defaultAudit := filepath.Join(home, ".local", "state", "agy-gate", "audit.jsonl")
 
 	sock := fs.String("socket", defaultSock, "socket path")
-	model := fs.String("model", "gemini-3.6-flash-low", "model to use")
+	model := fs.String("model", "gemini-3.8-flash-low", "model to use")
 	workers := fs.Int("workers", 2, "number of workers")
 	recycle := fs.Int("recycle", 6, "requests per worker before it is replaced (context grows ~2.3k tokens per request)")
 	timeout := fs.Duration("timeout", 40*time.Second, "timeout")
@@ -120,7 +120,7 @@ type evalCase struct {
 func eval() {
 	fs := flag.NewFlagSet("eval", flag.ExitOnError)
 	useJudge := fs.Bool("judge", false, "send cases the policy cannot decide to live agy judge workers")
-	model := fs.String("model", "gemini-3.6-flash-low", "judge model")
+	model := fs.String("model", "gemini-3.8-flash-low", "judge model")
 	workers := fs.Int("workers", 2, "judge workers")
 	isolate := fs.Bool("isolate", true, "run judge workers under bwrap")
 	fs.Parse(os.Args[2:])

@@ -117,8 +117,9 @@ agy --agent agy-gate-judge --add-dir <ABS workerdir> --model <m> --input-format 
   are pinned in memory; a transcript whose seen prefix changes is treated as tampered.
 - Output must be one JSON object. Anything else, a timeout, or a dead worker is retried once on
   another worker, then denied. A quota error disables the judge for 5 minutes (fast deny).
-- Default model `gemini-3.6-flash-low`, the one flash tier that reasons before answering; it uses
-  the Gemini quota pool. Measured 10-15 s median per request with the full prompt.
+- Default model `gemini-3.8-flash-low`, the cheapest Gemini model agy offers; it uses the Gemini
+  quota pool. Measured 2.2-3.4 s per request (15 calls, agy 1.3.4). `-model` picks another one
+  from `agy models`.
 
 ## Probe (input layer)
 
